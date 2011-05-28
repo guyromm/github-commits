@@ -1,0 +1,1 @@
+this little tool queries the github v2 api for commits into your selected repos and compiles a periodical commits report with breakup by user, project & date.
