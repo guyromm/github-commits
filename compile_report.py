@@ -13,11 +13,13 @@ GITHUB_PROJECTS = open('githubprojects.txt','r').read().strip().split('\n')
 
 by_user={}
 by_project={}
+
 by_date={}
 
 user_project={}
 user_date={}
 user_project_date={}
+project_date={}
 
 for proj in GITHUB_PROJECTS:
     ofn = os.path.join('data','%s.json'%proj)
@@ -54,7 +56,8 @@ for fn in glob.glob('data/*.json'):
                 break
         assert user,c
         proj = os.path.basename(fn).replace('.json','')
-        date = dateutil.parser.parse(c['authored_date'])
+        date = datetime.datetime.strptime(c['authored_date'][0:-5],'%Y-%m-%dT%H:%M:%S-') #dateutil.parser.parse(c['authored_date'])
+
         if fr and date.date()<fr: continue
         if to and date.date()>to: continue
         print '%s -> %s on %s'%(user,proj,date)
@@ -88,20 +91,24 @@ for fn in glob.glob('data/*.json'):
         else:
             added = 0
 
+        if proj not in project_date: project_date[proj]={}
+        if date.date() not in project_date[proj]: project_date[proj][date.date()] = initarr()
+        
         if user not in by_user: 
             user_project_date[user]={}
             user_date[user]={}
             user_project[user]={}
             by_user[user]=initarr()
-            
+        def idsort(i1,i2):
+            return cmp(i1[3],i2[3])
         def incr(o):
             global dfsum,added,removed,comid,commsg
             o['times']+=1
             o['diff']+=dfsum
             o['removed']+=removed
             o['added']+=added
-            o['ids'].append([comid,commsg])
-        
+            o['ids'].append([comid,commsg,user,date])
+            o['ids'].sort(idsort)
         incr(by_user[user])
 
         if proj not in by_project: 
@@ -122,6 +129,7 @@ for fn in glob.glob('data/*.json'):
         if proj not in user_project_date[user]: user_project_date[user][proj]={}
         if date.date() not in user_project_date[user][proj]: user_project_date[user][proj][date.date()]=initarr()
 
+        incr(project_date[proj][date.date()])
         incr(user_project_date[user][proj][date.date()])
         incr(by_date[date.date()])
         incr(user_date[user][date.date()])
@@ -140,7 +148,7 @@ dtendpat = "</tbody></table>"
 rowpat = "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n"
 def mkrow(date,dt,commits=True):
     if commits:
-        cm = ', '.join(["<a href='https://github.com/%s' title='%s'>%s</a>"%(com,commsg,com.split('/')[4][0:4]) for com,commsg in dt['ids']])
+        cm = ', '.join(["<a href='https://github.com/%s' title='%s by %s on %s'>%s</a>"%(com,commsg,user,stamp,com.split('/')[4][0:4]) for com,commsg,user,stamp in dt['ids']])
     else:
         cm=''
     rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],cm)
@@ -149,7 +157,8 @@ def srtit(a1,a2):
     return cmp(a1[0],a2[0])
 def srt2(i1,i2):
     return cmp(i1[1]['diff'],i2[1]['diff'])
-
+def srt3(i1,i2):
+    return cmp(i1[0],i2[0])
 if fr:op+="<small>commits are starting from %s</small><br />"%(fr)
 if to:op+="<small>commits are until %s</small></br >"%(to)
 op+="<h1>user totals</h1>"
@@ -159,6 +168,16 @@ uitems.sort(srt2,reverse=True)
 for user,commits in uitems:
     op+=mkrow(user,commits,commits=False)
 op+=dtendpat
+op+="<h1>project totals</h1>"
+for proj,dates in project_date.items():
+    op+="<h2>%s</h2>"%proj
+    op+=dtpat
+    commits = dates.items()
+    commits.sort(srt3)
+    for date,commit in commits:
+        op+=mkrow(date,commit,commits=True)
+    op+=dtendpat
+
 for user,projects in user_project_date.items():
     op+="<h1>%s commits by %s into %s project(s)</h1>\n"%(by_user[user]['times'],user,len(user_project[user]))
 
