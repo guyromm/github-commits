@@ -172,7 +172,7 @@ thead { background-color:#abc; }
 """
 dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>links</tr></thead><tbody>\n"
 dtendpat = "</tbody></table>"
-rowpat = "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n"
+rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n"
 def mkrow(date,dt,commits=True):
     if commits:
         cm = ', '.join(["<a href='https://github.com%s' title='%s by %s on %s'>%s</a>"%(com,commsg,user,stamp,com.split('/')[4][0:4]) for com,commsg,user,stamp in dt['ids']])
