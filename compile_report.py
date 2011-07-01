@@ -161,15 +161,49 @@ for fn in glob.glob('data/*.json'):
         incr(by_date[date.date()])
         incr(user_date[user][date.date()])
 
+def srtit(a1,a2):
+    return cmp(a1[0],a2[0])
+def srt2(i1,i2):
+    return cmp(i1[1]['diff'],i2[1]['diff'])
+def srt3(i1,i2):
+    return cmp(i1[0],i2[0])
+import time
+def totimestamp(dt):
+    return time.mktime(dt.timetuple()) + 0/1e6 #dt.microsecond/1e6
+        
+jsexp=[]
+for user in user_date:
+    items = user_date[user].items()
+
+    #print([totimestamp(it[0]) for it in items])
+    for item in items:
+        #if user not in ['nskrypnik@gmail.com','3demax@gmail.com']: continue #'3demax@gmail.com': continue
+        tm = int(totimestamp(item[0]))
+        curi = item[1]['diff']
+        jsexp.append({'action':user,'time':curi,'curitems':int(tm)})
+def srtjsexp(i1,i2):
+    return cmp(i1['curitems'],i2['curitems'])
+
+jsexp.sort(srtjsexp)
+
 op="""<doctype !html>
 <html>
 <head>
+<script type='text/javascript' src='jquery-1.6.1.min.js'></script>
+<script type='text/javascript' src='raphael-min.js'></script>
+<script type='text/javascript'>
+var data = %s;
+</script>
+<script type='text/javascript' src='plotgraph.js'></script>
 <style type='text/css'>
+#info { width:920px; height:200px; }
 thead { background-color:#abc; }
 </style>
 </head>
 <body>
-"""
+<div id='info'></div>
+"""%(json.dumps(jsexp))
+
 dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>links</tr></thead><tbody>\n"
 dtendpat = "</tbody></table>"
 rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n"
@@ -180,12 +214,6 @@ def mkrow(date,dt,commits=True):
         cm=''
     rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],cm)
     return rt
-def srtit(a1,a2):
-    return cmp(a1[0],a2[0])
-def srt2(i1,i2):
-    return cmp(i1[1]['diff'],i2[1]['diff'])
-def srt3(i1,i2):
-    return cmp(i1[0],i2[0])
 opa=[]
 if fr:opa.append("commits are starting from %s"%(fr))
 if to:opa.append("commits are until %s"%(to))
