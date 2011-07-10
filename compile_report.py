@@ -2,12 +2,13 @@
 
 import json,glob,os,datetime,re,sys
 from commands import getstatusoutput as gso
-usermap = {re.compile('milez'):'guyromm@gmail.com'
-           ,re.compile(re.escape('3demax@ukr.net')):'3demax@gmail.com'
-           ,re.compile(re.escape('dima@dima-Latitude-D820.')):'maltsev.dima7@gmail.com'
-           ,re.compile(re.escape('nskrypnik@hosted-by.leaseweb.com')):'nskrypnik@gmail.com'
-           ,re.compile(re.escape('Den@.(none)')):'mr.dantsev@gmail.com'
-           }
+
+usermap = {}
+if os.path.exists('usermap.json'):
+    usermapjson = json.loads(open('usermap.json','r').read())
+    for k,v in usermapjson.items():
+        usermap[re.compile(re.escape(k))]=v
+
 GITHUB_USER = open('githubuser.txt','r').read().strip()
 GITHUB_PASSWORD = open('githubpw.txt','r').read().strip()
 GITHUB_PROJECTS = open('githubprojects.txt','r').read().strip().split('\n')
@@ -62,6 +63,11 @@ if len(sys.argv)>1:
     fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
 else:
     fr,to = None,None
+if len(sys.argv)>2:
+    rcpt = sys.argv[2]
+else:
+    rcpt = None
+    
 comre = re.compile('([a-f0-9]{16})')
 for fn in glob.glob('data/*.json'):
     if comre.search(fn): continue
@@ -273,3 +279,28 @@ ofn+='.html'
 fp = open(ofn,'w') ; fp.write(op) ; fp.close()
 print 'written to %s'%ofn
 
+srvr,port,un,pw = open('smtp.txt','r').read().strip().split(':')
+if rcpt:
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    
+    fromaddr = un
+    toaddrs  = rcpt
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'project commits for %s - %s'%(fr,to)
+    part2 = MIMEText(op, 'html')
+    msg.attach(part2)
+
+    # Credentials (if needed)
+    username = fromaddr
+    password = pw
+
+    # The actual mail send
+    server = smtplib.SMTP('%s:%s'%(srvr,port))
+    
+    server.starttls()
+    server.login(username,password)
+    server.sendmail(fromaddr, toaddrs, msg.as_string())
+    server.quit()
+      
