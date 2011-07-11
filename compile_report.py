@@ -61,6 +61,7 @@ def initarr():
 
 if len(sys.argv)>1:
     fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
+    print 'report is for range %s - %s'%(fr,to)
 else:
     fr,to = None,None
 if len(sys.argv)>2:
@@ -276,11 +277,12 @@ ofn = 'commits'
 if fr: ofn+='-%s'%fr
 if to: ofn+=':%s'%to
 ofn+='.html'
-fp = open(ofn,'w') ; fp.write(op) ; fp.close()
-print 'written to %s'%ofn
-
-srvr,port,un,pw = open('smtp.txt','r').read().strip().split(':')
-if rcpt:
+if not rcpt:
+    fp = open(ofn,'w') ; fp.write(op) ; fp.close()
+    print 'written to %s'%ofn
+else:
+    srvr,port,un,pw = open('smtp.txt','r').read().strip().split(':')
+    print 'mailing to %s'%rcpt
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText

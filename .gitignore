@@ -1,0 +1,9 @@
+*~
+*.pyc
+#ignore configuration
+*.txt
+*.json
+#ignore output
+*.html
+#data dir
+data
