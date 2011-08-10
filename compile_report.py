@@ -65,7 +65,9 @@ if len(sys.argv)>1:
 else:
     fr,to = None,None
 if len(sys.argv)>2:
-    rcpt = sys.argv[2]
+    if sys.argv[2][0]=='@': rcptraw = open(sys.argv[2][1:],'r').read()
+    else: rcptraw = rcpt = sys.argv[2]
+    rcpt = rcptraw.split(',')
 else:
     rcpt = None
     
@@ -281,21 +283,22 @@ if not rcpt:
     fp = open(ofn,'w') ; fp.write(op) ; fp.close()
     print 'written to %s'%ofn
 else:
-    srvr,port,un,pw = open('smtp.txt','r').read().strip().split(':')
-    print 'mailing to %s'%rcpt
+    srvr,port,un,pw,sender = open('smtp.txt','r').read().strip().split(':')
+
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     
-    fromaddr = un
-    toaddrs  = rcpt
+    fromaddr = sender
     msg = MIMEMultipart('alternative')
     msg['Subject'] = 'project commits for %s - %s'%(fr,to)
+    msg['From'] = sender
+    #msg['Reply-To'] = sender
     part2 = MIMEText(op, 'html')
     msg.attach(part2)
 
     # Credentials (if needed)
-    username = fromaddr
+    username = un
     password = pw
 
     # The actual mail send
@@ -303,6 +306,10 @@ else:
     
     server.starttls()
     server.login(username,password)
-    server.sendmail(fromaddr, toaddrs, msg.as_string())
+    for rc in rcpt:
+        print 'mailing to %s -> %s'%(fromaddr,rc)
+        toaddrs  = rc
+        msg['To']=rc
+        server.sendmail(fromaddr, toaddrs, msg.as_string())
     server.quit()
       
