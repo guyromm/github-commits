@@ -31,7 +31,7 @@ for proj in GITHUB_PROJECTS:
     if os.path.exists(ofn):
         st = os.stat(ofn)
         fmt = datetime.datetime.fromtimestamp(st.st_mtime)
-        oneh = (datetime.datetime.now()-datetime.timedelta(days=1))
+        oneh = (datetime.datetime.now()-datetime.timedelta(hours=1))
         #print 'fmt = %s; oneh = %s'%(fmt,oneh)
         if fmt>=oneh:
             fetchnew=False
