@@ -4,14 +4,15 @@ import json,glob,os,datetime,re,sys
 from commands import getstatusoutput as gso
 
 usermap = {}
-if os.path.exists('usermap.json'):
-    usermapjson = json.loads(open('usermap.json','r').read())
-    for k,v in usermapjson.items():
-        usermap[re.compile(re.escape(k))]=v
 
-GITHUB_USER = open('githubuser.txt','r').read().strip()
-GITHUB_PASSWORD = open('githubpw.txt','r').read().strip()
-GITHUB_PROJECTS = open('githubprojects.txt','r').read().strip().split('\n')
+
+conf = json.loads(open('config.json','r').read().replace('\n',''))
+GITHUB_USER = conf['user'] #open('githubuser.txt','r').read().strip()
+GITHUB_PASSWORD = conf['user']+':'+conf['password'] #open('githubpw.txt','r').read().strip()
+GITHUB_PROJECTS = conf['projects'] #open('githubprojects.txt','r').read().strip().split('\n')
+usermapjson = conf['usermap']
+for k,v in usermapjson.items():
+    usermap[re.compile(re.escape(k))]=v
 
 by_user={}
 by_project={}
@@ -283,7 +284,11 @@ if not rcpt:
     fp = open(ofn,'w') ; fp.write(op) ; fp.close()
     print 'written to %s'%ofn
 else:
-    srvr,port,un,pw,sender = open('smtp.txt','r').read().strip().split(':')
+    srvr = conf['smtp_server']
+    port = conf['smtp_port']
+    un = conf['smtp_user']
+    pw = conf['smtp_pw']
+    sender = conf['smtp_sender']
 
     import smtplib
     from email.mime.multipart import MIMEMultipart
