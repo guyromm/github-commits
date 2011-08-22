@@ -85,7 +85,7 @@ else var maxitems=0;
 			    d.node.onmouseover = function(ev) { 
 				var mikrakey = parseInt(ev.target.cx.animVal.value)+','+parseInt(ev.target.cy.animVal.value)
 				var m = mikra[mikrakey];
-				document.getElementById('info').innerHTML = m.dt+": "+m.val+" at "+m.ci+" entries";
+				document.getElementById('info').innerHTML = m.dt+": "+m.val+" at "+new Date(m.ci*1000);
 			     d.attr({fill:'black'});
 			    }
 
