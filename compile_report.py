@@ -5,6 +5,7 @@ from commands import getstatusoutput as gso
 
 usermap = {}
 
+storyre= re.compile(re.escape('#')+'([0-9]+)')
 
 conf = json.loads(open('config.json','r').read().replace('\n',''))
 GITHUB_USER = conf['user'] #open('githubuser.txt','r').read().strip()
@@ -14,6 +15,7 @@ usermapjson = conf['usermap']
 for k,v in usermapjson.items():
     usermap[re.compile(re.escape(k))]=v
 
+by_story={}
 by_user={}
 by_project={}
 
@@ -33,11 +35,10 @@ for proj in GITHUB_PROJECTS:
         st = os.stat(ofn)
         fmt = datetime.datetime.fromtimestamp(st.st_mtime)
         oneh = (datetime.datetime.now()-datetime.timedelta(hours=1))
-        #print 'fmt = %s; oneh = %s'%(fmt,oneh)
-        if fmt>=oneh:
-            fetchnew=False
-        else:
-            os.unlink(ofn)
+        if fmt>=oneh:fetchnew=False
+        else:os.unlink(ofn)
+        print 'fmt = %s; oneh = %s; fetchnew = %s'%(fmt,oneh,fetchnew)
+
     if fetchnew:
         print 'fetching project %s'%proj
         pagenum=1
@@ -45,11 +46,16 @@ for proj in GITHUB_PROJECTS:
         while True:
             print 'taking page %s'%pagenum
             cmd = "curl -s -u '%s' 'http://github.com/api/v2/json/commits/list/%s/%s/master?page=%s'"%(GITHUB_PASSWORD,GITHUB_USER,proj,pagenum)
+            print cmd
             st,op=gso(cmd) ; assert st==0
             pagenum+=1
+            print '%s bytes received'%(len(op))
             dt = json.loads(op)
             if 'commits' in dt: print '%s entries'%len(dt['commits'])
-            if 'commits' not in dt or not len(dt['commits']): break
+            if 'commits' not in dt or not len(dt['commits']): 
+                if pagenum<1:
+                    raise Exception('no commits in %s,%s'%(proj,pagenum))
+                break
             wr['commits']+=dt['commits']
 
         fp = open(ofn,'w') ; fp.write(json.dumps(wr)); fp.close()
@@ -75,15 +81,17 @@ else:
 comre = re.compile('([a-f0-9]{16})')
 for fn in glob.glob('data/*.json'):
     if comre.search(fn): continue
+    #raise Exception(fn)
     obj = json.loads(open(fn,'r').read())
 
     print 'going over proj %s'%fn
     assert 'commits' in obj,'cannot find commits in %s'%fn
+    print 'project has %s commits' %(len(obj['commits']))
     for c in obj['commits']:
         projfn = os.path.basename(fn).replace('.json','')
 
         comfn = os.path.join('data','%s.%s.json'%(projfn,c['id']))
-
+        
         user = c['committer']['email']
         for um,uv in usermap.items():
             if um.search(user):
@@ -92,11 +100,18 @@ for fn in glob.glob('data/*.json'):
         assert user,c
         proj = os.path.basename(fn).replace('.json','')
         date = datetime.datetime.strptime(c['authored_date'][0:-5],'%Y-%m-%dT%H:%M:%S-') #dateutil.parser.parse(c['authored_date'])
-
+        #print 'fr = %s ; to = %s; date = %s'%(fr,to,date.date())
         if fr and date.date()<fr: continue
         if to and date.date()>to: continue
         #print '%s -> %s on %s'%(user,proj,date)
+
         comid = '/%s/%s/commit/%s'%(GITHUB_USER,projfn,c['id'])
+        #register the stories mentioned in the commit
+        stories=[]
+        for cr in storyre.finditer(c['message']):
+            story_id = cr.group(1)
+            stories.append(story_id)
+
         commsg = c['message']
         if not os.path.exists(comfn):
             print 'fetching commit %s'%c['id']
@@ -108,6 +123,7 @@ for fn in glob.glob('data/*.json'):
             comdt = json.loads(open(comfn).read())
         except:
             raise Exception('could not load from %s'%comfn)
+
         if 'modified' in comdt['commit']:
             try:
                 dfsum = sum([len(mod['diff'].split('\n')) for mod in comdt['commit']['modified'] if 'diff' in mod])
@@ -136,6 +152,7 @@ for fn in glob.glob('data/*.json'):
             user_date[user]={}
             user_project[user]={}
             by_user[user]=initarr()
+            
         def idsort(i1,i2):
             return cmp(i1[3],i2[3])
         def incr(o):
@@ -146,6 +163,11 @@ for fn in glob.glob('data/*.json'):
             o['added']+=added
             o['ids'].append([comid,commsg,user,date])
             o['ids'].sort(idsort)
+        for storyid in stories:
+            if storyid not in by_story:
+                by_story[storyid]=initarr()
+            incr(by_story[storyid])
+
         incr(by_user[user])
         incr(project_user[proj][user])
         if proj not in by_project: 
@@ -231,11 +253,18 @@ opa.append("generated on %s"%datetime.datetime.now())
 op+=' :: '.join(['<small>%s</small>'%ope for ope in opa])+'<br />'
 
 op+="<h1>user totals</h1>"
-op+=dtpat
+op+=dtpat.replace('date','user')
 uitems = by_user.items()
 uitems.sort(srt2,reverse=True)
 for user,commits in uitems:
     op+=mkrow(user,commits,commits=False)
+op+=dtendpat
+op+="<h1>story totals</h1>"
+op+=dtpat.replace('date','story')
+sitems = by_story.items()
+sitems.sort(srt2,reverse=True)
+for storyid,commits in sitems:
+    op+=mkrow(storyid,commits,commits=True)
 op+=dtendpat
 op+="<h1>project totals by date</h1>"
 for proj,dates in project_date.items():
