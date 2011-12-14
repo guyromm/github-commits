@@ -2,8 +2,11 @@
 
 import json,glob,os,datetime,re,sys
 from commands import getstatusoutput as gso
+from odesk_fetch import run_query,parse_result
+
 
 def run(start_date=None,end_date=None,makereport=False):
+    #do the odesk dance
     usermap = {}
 
     storyre= re.compile(re.escape('#')+'([0-9]+)')
@@ -14,7 +17,7 @@ def run(start_date=None,end_date=None,makereport=False):
     GITHUB_PROJECTS = conf['projects'] #open('githubprojects.txt','r').read().strip().split('\n')
     usermapjson = conf['usermap']
     for k,v in usermapjson.items():
-        usermap[re.compile(re.escape(k))]=v
+        usermap[re.compile(re.escape(k))]=[v,k]
 
     by_story={}
     by_user_story={}
@@ -66,7 +69,7 @@ def run(start_date=None,end_date=None,makereport=False):
             print '%s is recent enough'%proj
 
     def initarr():
-        return {'times':0,'diff':0,'removed':0,'added':0,'ids':[]}
+        return {'times':0,'diff':0,'removed':0,'added':0,'ids':[],'hours':0}
 
     if len(sys.argv)>1:
         fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
@@ -79,6 +82,8 @@ def run(start_date=None,end_date=None,makereport=False):
         rcpt = rcptraw.split(',')
     else:
         rcpt = None
+
+
 
     comre = re.compile('([a-f0-9]{16})')
     for fn in glob.glob('data/*.json'):
@@ -96,9 +101,11 @@ def run(start_date=None,end_date=None,makereport=False):
 
             user = c['committer']['email']
             for um,uv in usermap.items():
+                #print 'trying to match %s -> %s'%(uv[1],user)
                 if um.search(user):
-                    user = uv
+                    user = uv[0]
                     break
+
             assert user,c
             proj = os.path.basename(fn).replace('.json','')
             date = datetime.datetime.strptime(c['authored_date'][0:-5],'%Y-%m-%dT%H:%M:%S-') #dateutil.parser.parse(c['authored_date'])
@@ -159,7 +166,7 @@ def run(start_date=None,end_date=None,makereport=False):
             def idsort(i1,i2):
                 return cmp(i1[3],i2[3])
             def incr(o):
-                global dfsum,added,removed,comid,commsg
+                #global dfsum,added,removed,comid,commsg
                 o['times']+=1
                 o['diff']+=dfsum
                 o['removed']+=removed
@@ -200,13 +207,38 @@ def run(start_date=None,end_date=None,makereport=False):
             incr(by_date[date.date()])
             incr(user_date[user][date.date()])
 
+    #we get the odesk hours query
+    res = run_query(fr,to)
+
+    #and populate the relevant trees with our yummy new data
+    for user,dates in res['by_provider_date'].items():
+        if user not in user_date: user_date[user]={}
+        if user not in by_user: by_user[user]=initarr()
+        for dt,hrs in dates.items():
+            mdt = datetime.datetime.strptime(dt,'%Y-%m-%d').date()
+            if mdt not in user_date[user]: user_date[user][mdt]=initarr()
+            user_date[user][mdt]['hours']+=hrs
+            by_user[user]['hours']+=hrs
+    #also by user/story
+    for user,stories in res['by_provider_story'].items():
+        for sid,hrs in stories.items():
+            usl = '#%s by %s'%(sid,user)
+            sid = '#'+sid
+            if usl not in by_user_story: by_user_story[usl]=initarr()
+            by_user_story[usl]['hours']+=hrs
+        
     if not makereport:
         return {'by_user':by_user,'by_story':by_story}
 
     def srtit(a1,a2):
         return cmp(a1[0],a2[0])
     def srt2(i1,i2):
-        return cmp(i1[1]['diff'],i2[1]['diff'])
+        try:
+            rt= cmp(i1[1]['hours'],i2[1]['hours'])
+        except:
+            print (i1[1],i2[1])
+            raise
+        return rt
     def srt3(i1,i2):
         return cmp(i1[0],i2[0])
     import time
@@ -221,7 +253,7 @@ def run(start_date=None,end_date=None,makereport=False):
         for item in items:
             #if user not in ['nskrypnik@gmail.com','3demax@gmail.com']: continue #'3demax@gmail.com': continue
             tm = int(totimestamp(item[0]))
-            curi = item[1]['diff']
+            curi = item[1]['hours']
             jsexp.append({'action':user,'time':curi,'curitems':int(tm)})
     def srtjsexp(i1,i2):
         return cmp(i1['curitems'],i2['curitems'])
@@ -246,15 +278,15 @@ def run(start_date=None,end_date=None,makereport=False):
     <div id='info'></div>
     """%(json.dumps(jsexp))
 
-    dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>links</tr></thead><tbody>\n"
+    dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>hours</th><th>links</tr></thead><tbody>\n"
     dtendpat = "</tbody></table>"
-    rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n"
+    rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%3.2f</td><td>%s</td></tr>\n"
     def mkrow(date,dt,commits=True):
         if commits:
             cm = ', '.join(["<a href='https://github.com%s' title='%s by %s on %s'>%s</a>"%(com,commsg,user,stamp,com.split('/')[4][0:4]) for com,commsg,user,stamp in dt['ids']])
         else:
             cm=''
-        rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],cm)
+        rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],dt['hours'],cm)
         return rt
     opa=[]
     if fr:opa.append("commits are starting from %s"%(fr))
@@ -272,6 +304,7 @@ def run(start_date=None,end_date=None,makereport=False):
     op+="<h1>story/user totals</h1>"
     op+=dtpat.replace('date','story')
     sitems = by_user_story.items()
+
     sitems.sort(srt2,reverse=True)
     for storyid,commits in sitems:
         op+=mkrow(storyid,commits,commits=True)
@@ -359,4 +392,5 @@ def run(start_date=None,end_date=None,makereport=False):
         server.quit()
 
 if __name__=='__main__':
+    
     run(makereport=True)

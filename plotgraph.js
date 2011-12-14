@@ -1,6 +1,6 @@
 var lines={}; var keys=[]; var mink=null; var maxk=null; var minv=null; var minmax={};
 
-var colarr = ['blue','cyan','red','yellow','pink','gray','purple','green'];
+var colarr = ['blue','cyan','red','yellow','pink','gray','purple','green','#abc','#def','#900','#009'];
 //var colors = {'create_index':'blue','drop_index':'cyan','insert':'red','select10':'yellow','select1000':'pink','data_size':'gray','chunks_amt':'yellow','chunks_deviation':'purple','shards_amt':'green'};
 var colors={};
 for (var i=0;i<data.length;i++)
@@ -15,6 +15,9 @@ console.log('colors = %o',colors);
 var mikra = {};
 var prev={};
 window.onload = function() { 
+    var dv = $('<div></div>');
+    dv.css('float','right');
+    $('body').prepend(dv);
     console.log('cycling colors %o',colors);
     for (var tp in colors)
     {
@@ -22,7 +25,8 @@ window.onload = function() {
 	el.style.backgroundColor=colors[tp];
 	el.style.marginRight='10px';
 	el.innerHTML = tp;
-	$('body').prepend(el); //document.getElementById('info').appendChild(el);
+	dv.prepend(el); //document.getElementById('info').appendChild(el);
+	dv.prepend('<br />');
     }
 
 var onlyres = /only=([^&]+)/.exec(location.href);
