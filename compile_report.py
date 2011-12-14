@@ -200,6 +200,9 @@ def run(start_date=None,end_date=None,makereport=False):
             incr(by_date[date.date()])
             incr(user_date[user][date.date()])
 
+    if not makereport:
+        return {'by_user':by_user,'by_story':by_story}
+
     def srtit(a1,a2):
         return cmp(a1[0],a2[0])
     def srt2(i1,i2):
