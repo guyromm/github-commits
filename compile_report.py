@@ -16,6 +16,7 @@ for k,v in usermapjson.items():
     usermap[re.compile(re.escape(k))]=v
 
 by_story={}
+by_user_story={}
 by_user={}
 by_project={}
 
@@ -111,6 +112,8 @@ for fn in glob.glob('data/*.json'):
         for cr in storyre.finditer(c['message']):
             story_id = cr.group(1)
             stories.append(story_id)
+        if not len(stories):
+            stories.append('none')
 
         commsg = c['message']
         if not os.path.exists(comfn):
@@ -152,7 +155,6 @@ for fn in glob.glob('data/*.json'):
             user_date[user]={}
             user_project[user]={}
             by_user[user]=initarr()
-            
         def idsort(i1,i2):
             return cmp(i1[3],i2[3])
         def incr(o):
@@ -166,7 +168,11 @@ for fn in glob.glob('data/*.json'):
         for storyid in stories:
             if storyid not in by_story:
                 by_story[storyid]=initarr()
+            tok = '#%s by %s'%(storyid,user)
+            if tok not in by_user_story:
+                by_user_story[tok]=initarr()
             incr(by_story[storyid])
+            incr(by_user_story[tok])
 
         incr(by_user[user])
         incr(project_user[proj][user])
@@ -259,12 +265,13 @@ uitems.sort(srt2,reverse=True)
 for user,commits in uitems:
     op+=mkrow(user,commits,commits=False)
 op+=dtendpat
-op+="<h1>story totals</h1>"
+op+="<h1>story/user totals</h1>"
 op+=dtpat.replace('date','story')
-sitems = by_story.items()
+sitems = by_user_story.items()
 sitems.sort(srt2,reverse=True)
 for storyid,commits in sitems:
     op+=mkrow(storyid,commits,commits=True)
+
 op+=dtendpat
 op+="<h1>project totals by date</h1>"
 for proj,dates in project_date.items():
