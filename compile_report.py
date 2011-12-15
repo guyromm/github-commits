@@ -5,7 +5,7 @@ from commands import getstatusoutput as gso
 from odesk_fetch import run_query,parse_result
 
 
-def run(start_date=None,end_date=None,makereport=False):
+def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_users=False):
     #do the odesk dance
     usermap = {}
 
@@ -207,25 +207,30 @@ def run(start_date=None,end_date=None,makereport=False):
             incr(by_date[date.date()])
             incr(user_date[user][date.date()])
 
+    if odesk:
     #we get the odesk hours query
-    res = run_query(fr,to)
+        res = run_query(fr,to)
 
-    #and populate the relevant trees with our yummy new data
-    for user,dates in res['by_provider_date'].items():
-        if user not in user_date: user_date[user]={}
-        if user not in by_user: by_user[user]=initarr()
-        for dt,hrs in dates.items():
-            mdt = datetime.datetime.strptime(dt,'%Y-%m-%d').date()
-            if mdt not in user_date[user]: user_date[user][mdt]=initarr()
-            user_date[user][mdt]['hours']+=hrs
-            by_user[user]['hours']+=hrs
-    #also by user/story
-    for user,stories in res['by_provider_story'].items():
-        for sid,hrs in stories.items():
-            usl = '#%s by %s'%(sid,user)
-            sid = '#'+sid
-            if usl not in by_user_story: by_user_story[usl]=initarr()
-            by_user_story[usl]['hours']+=hrs
+        #and populate the relevant trees with our yummy new data
+        for user,dates in res['by_provider_date'].items():
+            if user not in user_date: 
+                if not all_odesk_users: continue
+                user_date[user]={}
+            if user not in by_user: by_user[user]=initarr()
+            for dt,hrs in dates.items():
+                mdt = datetime.datetime.strptime(dt,'%Y-%m-%d').date()
+                if mdt not in user_date[user]: user_date[user][mdt]=initarr()
+                user_date[user][mdt]['hours']+=hrs
+                by_user[user]['hours']+=hrs
+        #also by user/story
+        for user,stories in res['by_provider_story'].items():
+            for sid,hrs in stories.items():
+                usl = '#%s by %s'%(sid,user)
+                sid = '#'+sid
+                if usl not in by_user_story: 
+                    if not all_odesk_users: continue
+                    by_user_story[usl]=initarr()
+                by_user_story[usl]['hours']+=hrs
         
     if not makereport:
         return {'by_user':by_user,'by_story':by_story}
@@ -275,12 +280,13 @@ def run(start_date=None,end_date=None,makereport=False):
     </style>
     </head>
     <body>
+    <h1>users/days hours chart</h1>
     <div id='info'></div>
     """%(json.dumps(jsexp))
 
     dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>hours</th><th>links</tr></thead><tbody>\n"
     dtendpat = "</tbody></table>"
-    rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%3.2f</td><td>%s</td></tr>\n"
+    rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%3.1f</td><td>%s</td></tr>\n"
     def mkrow(date,dt,commits=True):
         if commits:
             cm = ', '.join(["<a href='https://github.com%s' title='%s by %s on %s'>%s</a>"%(com,commsg,user,stamp,com.split('/')[4][0:4]) for com,commsg,user,stamp in dt['ids']])
