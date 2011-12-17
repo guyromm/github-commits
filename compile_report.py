@@ -1,11 +1,11 @@
 #!/usr/bin/python
 
-import json,glob,os,datetime,re,sys
+import json,glob,os,datetime,re,sys,codecs
 from commands import getstatusoutput as gso
 from odesk_fetch import run_query,parse_result
 
 
-def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_users=False):
+def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=False,branches=['master'],repos=None):
     #do the odesk dance
     usermap = {}
 
@@ -22,6 +22,7 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     by_story={}
     by_user_story={}
     by_user={}
+    by_branch={}
     by_project={}
 
     by_date={}
@@ -32,38 +33,66 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     user_project_date={}
     project_date={}
 
+    projbranches={}
+
     for proj in GITHUB_PROJECTS:
-        ofn = os.path.join('data','%s.json'%proj)
-        fetchnew=True
+        if repos and proj not in repos:
+            continue
+        if 'all' in branches:
+            cmd = "curl -s -u '%s' 'http://github.com/api/v2/json/repos/show/%s/%s/branches'"%(GITHUB_PASSWORD,GITHUB_USER,proj)
+            st,op = gso(cmd) ; assert st==0
+            bop = json.loads(op)
+            mybranches = bop['branches'].keys()
+            projbranches[proj]=mybranches
+        else:
+            mybranches = branches
+            projbranches[proj]=mybranches
 
-        if os.path.exists(ofn):
-            st = os.stat(ofn)
-            fmt = datetime.datetime.fromtimestamp(st.st_mtime)
-            oneh = (datetime.datetime.now()-datetime.timedelta(hours=1))
-            if fmt>=oneh:fetchnew=False
-            else:os.unlink(ofn)
-            print 'fmt = %s; oneh = %s; fetchnew = %s'%(fmt,oneh,fetchnew)
+        bcnt=0
+        for branch in mybranches:
+            bcnt+=1
+            print 'going for branch %s, %s/%s to get'%(branch,bcnt,len(mybranches))
+            ofn = os.path.join('data','%s:%s.json'%(proj,branch))
+            fetchnew=True
 
-        if fetchnew:
-            print 'fetching project %s'%proj
-            pagenum=1
-            wr={'commits':[]}
-            while True:
-                print 'taking page %s'%pagenum
-                cmd = "curl -s -u '%s' 'http://github.com/api/v2/json/commits/list/%s/%s/master?page=%s'"%(GITHUB_PASSWORD,GITHUB_USER,proj,pagenum)
-                print cmd
-                st,op=gso(cmd) ; assert st==0
-                pagenum+=1
-                print '%s bytes received'%(len(op))
-                dt = json.loads(op)
-                if 'commits' in dt: print '%s entries'%len(dt['commits'])
-                if 'commits' not in dt or not len(dt['commits']): 
-                    if pagenum<1:
-                        raise Exception('no commits in %s,%s'%(proj,pagenum))
-                    break
-                wr['commits']+=dt['commits']
 
-            fp = open(ofn,'w') ; fp.write(json.dumps(wr)); fp.close()
+            if os.path.exists(ofn):
+                st = os.stat(ofn)
+                fmt = datetime.datetime.fromtimestamp(st.st_mtime)
+                oneh = (datetime.datetime.now()-datetime.timedelta(days=1))
+                if fmt>=oneh:fetchnew=False
+                else:os.unlink(ofn)
+                print 'fmt = %s; oneh = %s; fetchnew = %s'%(fmt,oneh,fetchnew)
+
+            if fetchnew:
+                print 'fetching project %s'%proj
+                pagenum=1
+                wr={'commits':[]}
+                while True:
+                    print 'taking page %s'%pagenum
+                    tries=0
+                    cmd = "curl --max-time 5 -s -u '%s' 'http://github.com/api/v2/json/commits/list/%s/%s/%s?page=%s'"%(GITHUB_PASSWORD,GITHUB_USER,proj,branch,pagenum)
+                    print cmd
+                    while True:
+                        if tries>7: raise Exception('too many tries at %s'%cmd)
+                        st,op=gso(cmd) ; 
+                        if st!=0:
+                            tries+=1
+                            print "curl returned %s. try %s"%(st,tries)
+                        else:
+                            break
+                    pagenum+=1
+                    print '%s bytes received'%(len(op))
+                    dt = json.loads(op)
+                    if 'commits' in dt: print '%s entries'%len(dt['commits'])
+                    if 'commits' not in dt or not len(dt['commits']): 
+                        if pagenum<1:
+                            raise Exception('no commits in %s,%s'%(proj,pagenum))
+                        break
+                    wr['commits']+=dt['commits']
+
+                fp = open(ofn,'w') ; fp.write(json.dumps(wr)); fp.close()
+                print 'written to %s'%ofn
 
         else:
             print '%s is recent enough'%proj
@@ -71,27 +100,28 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     def initarr():
         return {'times':0,'diff':0,'removed':0,'added':0,'ids':[],'hours':0}
 
-    if len(sys.argv)>1:
-        fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
-        print 'report is for range %s - %s'%(fr,to)
-    else:
-        fr,to = None,None
-    if len(sys.argv)>2:
-        if sys.argv[2][0]=='@': rcptraw = open(sys.argv[2][1:],'r').read()
-        else: rcptraw = rcpt = sys.argv[2]
-        rcpt = rcptraw.split(',')
-    else:
-        rcpt = None
 
-
-
+    print 'generation phase.'
     comre = re.compile('([a-f0-9]{16})')
+    projre = re.compile('^data/(.*)\:(.*)\.json$')
+    repos_branches_processed={}
+
     for fn in glob.glob('data/*.json'):
         if comre.search(fn): continue
         #raise Exception(fn)
+        projres = projre.search(fn)
+        if not projres: raise Exception('dunno %s'%fn)
+        fproj = projres.group(1)
+        fbranch = projres.group(2)
+
+        if fbranch not in projbranches[fproj]:
+            #print('not supposed to do branch %s on %s (%s)'%(fbranch,fproj,projbranches[fproj]))
+            continue
         obj = json.loads(open(fn,'r').read())
 
-        print 'going over proj %s'%fn
+
+        print 'going over proj %s'%(fn)
+
         assert 'commits' in obj,'cannot find commits in %s'%fn
         print 'project has %s commits' %(len(obj['commits']))
         for c in obj['commits']:
@@ -114,7 +144,10 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
             if to and date.date()>to: continue
             #print '%s -> %s on %s'%(user,proj,date)
 
-            comid = '/%s/%s/commit/%s'%(GITHUB_USER,projfn,c['id'])
+            if fproj not in repos_branches_processed: repos_branches_processed[fproj]=[]
+            if fbranch not in repos_branches_processed[fproj]: repos_branches_processed[fproj].append(fbranch)
+
+            comid = '/%s/%s/commit/%s'%(GITHUB_USER,fproj,c['id'])
             #register the stories mentioned in the commit
             stories=[]
             for cr in storyre.finditer(c['message']):
@@ -126,7 +159,7 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
             commsg = c['message']
             if not os.path.exists(comfn):
                 print 'fetching commit %s'%c['id']
-                comurl = 'http://github.com/api/v2/json/commits/show/%s/%s/%s'%(GITHUB_USER,projfn,c['id'])
+                comurl = 'http://github.com/api/v2/json/commits/show/%s/%s/%s'%(GITHUB_USER,fproj,c['id'])
                 curlcmd = 'curl -u %s %s > %s'%(GITHUB_PASSWORD,comurl,comfn)
                 st,op = gso(curlcmd) ; assert st==0
                 assert os.path.exists(comfn)
@@ -134,6 +167,10 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
                 comdt = json.loads(open(comfn).read())
             except:
                 raise Exception('could not load from %s'%comfn)
+
+            if 'commit' not in comdt:
+                print 'could not figure out %s'%comfn
+                raise Exception(comdt)
 
             if 'modified' in comdt['commit']:
                 try:
@@ -153,16 +190,20 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
             else:
                 added = 0
 
-            if proj not in project_date: project_date[proj]={}
-            if proj not in project_user: project_user[proj]={}
-            if user not in project_user[proj]: project_user[proj][user]=initarr()
-            if date.date() not in project_date[proj]: project_date[proj][date.date()] = initarr()
+            if fproj not in project_date: project_date[fproj]={}
+            if fproj not in project_user: project_user[fproj]={}
+            if user not in project_user[fproj]: project_user[fproj][user]=initarr()
+            if date.date() not in project_date[fproj]: project_date[fproj][date.date()] = initarr()
 
             if user not in by_user: 
                 user_project_date[user]={}
                 user_date[user]={}
                 user_project[user]={}
                 by_user[user]=initarr()
+
+            if fbranch not in by_branch:
+                by_branch[fbranch]=initarr()
+
             def idsort(i1,i2):
                 return cmp(i1[3],i2[3])
             def incr(o):
@@ -183,15 +224,16 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
                 incr(by_user_story[tok])
 
             incr(by_user[user])
-            incr(project_user[proj][user])
-            if proj not in by_project: 
-                by_project[proj]=initarr()
+            incr(by_branch[fbranch])
+            incr(project_user[fproj][user])
+            if fproj not in by_project: 
+                by_project[fproj]=initarr()
 
-            if proj not in user_project[user]:
-                user_project[user][proj]=initarr()
+            if fproj not in user_project[user]:
+                user_project[user][fproj]=initarr()
 
-            incr(user_project[user][proj])
-            incr(by_project[proj])
+            incr(user_project[user][fproj])
+            incr(by_project[fproj])
 
             if date.date() not in by_date: 
                 by_date[date.date()]=initarr()
@@ -199,16 +241,16 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
             if date.date() not in user_date[user]:
                 user_date[user][date.date()]=initarr()
 
-            if proj not in user_project_date[user]: user_project_date[user][proj]={}
-            if date.date() not in user_project_date[user][proj]: user_project_date[user][proj][date.date()]=initarr()
+            if fproj not in user_project_date[user]: user_project_date[user][fproj]={}
+            if date.date() not in user_project_date[user][fproj]: user_project_date[user][fproj][date.date()]=initarr()
 
-            incr(project_date[proj][date.date()])
-            incr(user_project_date[user][proj][date.date()])
+            incr(project_date[fproj][date.date()])
+            incr(user_project_date[user][fproj][date.date()])
             incr(by_date[date.date()])
             incr(user_date[user][date.date()])
 
-    if odesk:
-    #we get the odesk hours query
+    if odesk:    #we get the odesk hours query
+        print 'odesk hours phase.'
         res = run_query(fr,to)
 
         #and populate the relevant trees with our yummy new data
@@ -290,6 +332,7 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     def mkrow(date,dt,commits=True):
         if commits:
             cm = ', '.join(["<a href='https://github.com%s' title='%s by %s on %s'>%s</a>"%(com,commsg,user,stamp,com.split('/')[4][0:4]) for com,commsg,user,stamp in dt['ids']])
+
         else:
             cm=''
         rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],dt['hours'],cm)
@@ -297,7 +340,7 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     opa=[]
     if fr:opa.append("commits are starting from %s"%(fr))
     if to:opa.append("commits are until %s"%(to))
-    opa.append("generated on %s"%datetime.datetime.now())
+    opa.append("generated on %s. repos/branches: %s"%(datetime.datetime.now(),repos_branches_processed))
     op+=' :: '.join(['<small>%s</small>'%ope for ope in opa])+'<br />'
 
     op+="<h1>user totals</h1>"
@@ -307,6 +350,16 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     for user,commits in uitems:
         op+=mkrow(user,commits,commits=False)
     op+=dtendpat
+
+    op+="<h1>branch totals</h1>"
+    op+=dtpat.replace('date','branch')
+    uitems = by_branch.items()
+    uitems.sort(srt2,reverse=True)
+    for user,commits in uitems:
+        op+=mkrow(user,commits,commits=True)
+    op+=dtendpat
+    
+    
     op+="<h1>story/user totals</h1>"
     op+=dtpat.replace('date','story')
     sitems = by_user_story.items()
@@ -360,7 +413,7 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
     if to: ofn+=':%s'%to
     ofn+='.html'
     if not rcpt:
-        fp = open(ofn,'w') ; fp.write(op) ; fp.close()
+        fp = codecs.open(ofn,'w','utf-8') ; fp.write(op) ; fp.close()
         print 'written to %s'%ofn
     else:
         srvr = conf['smtp_server']
@@ -398,5 +451,21 @@ def run(start_date=None,end_date=None,makereport=False,odesk=True,all_odesk_user
         server.quit()
 
 if __name__=='__main__':
+    if len(sys.argv)>1:
+        fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
+        print 'report is for range %s - %s'%(fr,to)
+    else:
+        fr,to = None,None
+    if len(sys.argv)>2 and len(sys.argv[2]):
+        if sys.argv[2][0]=='@': rcptraw = open(sys.argv[2][1:],'r').read()
+        else: rcptraw = rcpt = sys.argv[2]
+        rcpt = rcptraw.split(',')
+    else:
+        rcpt = None
+    branches = sys.argv[3].split(',')
+    if len(sys.argv)>4:
+        repos = sys.argv[4].split(',')
+    else:
+        repos=None
     
-    run(makereport=True)
+    run(makereport=True,fr=fr,to=to,rcpt=rcpt,branches=branches,repos=repos)

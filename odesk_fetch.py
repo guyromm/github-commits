@@ -2,21 +2,29 @@ import sys,urllib,re,datetime,json
 import odesk
 conf = json.loads(open('odesk_auth.json','r').read())
 client = odesk.Client(conf['pub_key'],conf['priv_key'],conf['auth_token'])
-def run_query(date_from,date_to):
-    fields = ['memo','worked_on','provider_id','provider_name','sum(hours)']
+def run_query(date_from,date_to,provider=None):
+    if provider:
+        fields = ['memo','worked_on','sum(hours)']
+    else:
+        fields = ['memo','worked_on','provider_id','provider_name','sum(hours)']
 
     odq = odesk.Query(select=fields, 
                       where=(odesk.Q('worked_on') <= date_to) &\
                           (odesk.Q('worked_on') >= date_from))
-
-
-    res= client.\
-        timereport.\
-        get_team_report(conf['company_id'],conf['team_id'],odq , hours=True)
+    if provider:
+        res = client.\
+            timereport.\
+            get_provider_report(provider,odq,hours=False)
+        raise Exception(res)
+    else:
+        res= client.\
+            timereport.\
+            get_team_report(conf['company_id'],conf['team_id'],odq , hours=True)
     return parse_result(res,date_from,date_to)
 
 
 def parse_result(data,date_from,date_to,decode_users=True):
+    #print 'parsing result %s'%data
     if (type(date_from)==datetime.date): date_from = date_from.strftime('%Y-%m-%d')
     if (type(date_to)==datetime.date): date_to = date_to.strftime('%Y-%m-%d')
     date_from_d = datetime.datetime.strptime(date_from,'%Y-%m-%d')
@@ -77,7 +85,26 @@ def print_report(rt):
     for k,v in rt['by_story'].items():
         print '%s\t%s'%(k,v)
     print '------\n%s hours in total'%rt['total']
+def save_report(rt,fr,to):
+    op='<!doctype html><html><head><title>hours report for %s - %s</title></thead><body>'%(fr,to)
+    op+='<h1>odesk hours report for %s - %s</h1>'%(fr,to)
+    op+='<p><b>%4.1f</b> hours logged in total</p>'%rt['total']
+    op+='<h2>by provider</h2><table><thead><tr><th>provider</th><th>hours</th></tr></thead><tbody>'
+    for k,v in rt['by_provider'].items():
+        op+='<tr><td>%s</td><td style="text-align:right">%4.1f</td></tr>'%(k,v)
+    op+='</tbody></table>';
 
+    op+='<h2>by story</h2><table><thead><tr><th>provider</th><th>hours</th></tr></thead><tbody>'
+    for k,v in rt['by_story'].items():
+        op+='<tr><td>%s</td><td style="text-align:right">%4.1f</td></tr>'%(k,v)
+    op+='</tbody></table>';
+    op+='</body></html>'
+
+    fn = '%s:%s.html'%(fr,to)
+    fp = open(fn,'w')
+    fp.write(op);
+    fp.close()
+    print 'written to %s'%fn
 
 if __name__=='__main__':
     fr,to = sys.argv[1].split(':')
@@ -85,8 +112,10 @@ if __name__=='__main__':
     if len(sys.argv)>2 and sys.argv[2]=='test':
         from tdata import data
         rt = parse_result(data,date_from=fr,date_to=to)
+    elif len(sys.argv)>2:
+        rt = run_query(date_from=fr,date_to=to,provider=sys.argv[2])
     else:
         rt = run_query(date_from=fr,date_to = to)
 
-    print_report(rt)
+    save_report(rt,fr,to)
     
