@@ -34,6 +34,7 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
     project_date={}
 
     projbranches={}
+    projects_commits={}
 
     for proj in GITHUB_PROJECTS:
         if repos and proj not in repos:
@@ -53,25 +54,32 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
             bcnt+=1
             print 'going for branch %s, %s/%s to get'%(branch,bcnt,len(mybranches))
             ofn = os.path.join('data','%s:%s.json'%(proj,branch))
-            fetchnew=True
+            fetchnew=True ; lastcommit=None
 
-
+            #decide whether to really fetch the commits list based on whether the file exists
             if os.path.exists(ofn):
                 st = os.stat(ofn)
                 fmt = datetime.datetime.fromtimestamp(st.st_mtime)
                 oneh = (datetime.datetime.now()-datetime.timedelta(days=1))
                 if fmt>=oneh:fetchnew=False
-                else:os.unlink(ofn)
-                print 'fmt = %s; oneh = %s; fetchnew = %s'%(fmt,oneh,fetchnew)
-
+                else:
+                    lcop = json.loads(open(ofn,'r').read())
+                    if len(lcop['commits']):
+                        myc = lcop['commits'][0]
+                        lastcommit = datetime.datetime.strptime(myc['authored_date'][0:-5],'%Y-%m-%dT%H:%M:%S-')
+                    #raise Exception('last commit on %s'%lastcommit)
+                    #os.unlink(ofn)
+                print 'fmt = %s; oneh = %s; fetchnew = %s; lastcommit = %s'%(fmt,oneh,fetchnew,lastcommit)
+                
             if fetchnew:
-                print 'fetching project %s'%proj
+                print 'fetching project %s / %s'%(proj,branch)
                 pagenum=1
                 wr={'commits':[]}
                 while True:
                     print 'taking page %s'%pagenum
                     tries=0
                     cmd = "curl --max-time 5 -s -u '%s' 'http://github.com/api/v2/json/commits/list/%s/%s/%s?page=%s'"%(GITHUB_PASSWORD,GITHUB_USER,proj,branch,pagenum)
+
                     print cmd
                     while True:
                         if tries>7: raise Exception('too many tries at %s'%cmd)
@@ -81,9 +89,24 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
                             print "curl returned %s. try %s"%(st,tries)
                         else:
                             break
-                    pagenum+=1
+
                     print '%s bytes received'%(len(op))
                     dt = json.loads(op)
+                    if pagenum==1 and lastcommit:
+                        myc = dt['commits'][0]
+                        lastcommit2 = datetime.datetime.strptime(myc['authored_date'][0:-5],'%Y-%m-%dT%H:%M:%S-')
+                        print('saved last commit = %s ; fetched last commit = %s;'%(lastcommit,lastcommit2))
+                        if lastcommit==lastcommit2:
+                            print 'last commits match. touching existing file and moving on.'
+                            st,op = gso('touch %s'%ofn) ; assert st==0
+                            break
+                        elif lastcommit<lastcommit2:
+                            print 'existing last commit is older than one recieved. deleting existing file %s'%ofn
+                            os.unlink(ofn)
+                        else:
+                            raise Exception('how could it be that a saved commit is newer than retrieved on %s?'%ofn)
+
+                    pagenum+=1
                     if 'commits' in dt: print '%s entries'%len(dt['commits'])
                     if 'commits' not in dt or not len(dt['commits']): 
                         if pagenum<1:
@@ -127,7 +150,7 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
         for c in obj['commits']:
             projfn = os.path.basename(fn).replace('.json','')
 
-            comfn = os.path.join('data','%s.%s.json'%(projfn,c['id']))
+            comfn = os.path.join('data','%s.%s.json'%(fproj,c['id']))
 
             user = c['committer']['email']
             for um,uv in usermap.items():
@@ -148,6 +171,14 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
             if fbranch not in repos_branches_processed[fproj]: repos_branches_processed[fproj].append(fbranch)
 
             comid = '/%s/%s/commit/%s'%(GITHUB_USER,fproj,c['id'])
+            
+            #skip this commit if we already covered it.
+            if fproj not in projects_commits: projects_commits[fproj]=[]
+            if c['id'] not in projects_commits[fproj]: 
+                projects_commits[fproj].append(c['id'])
+            else:
+                print('already aggregated %s/%s'%(fproj,c['id']))
+                continue
             #register the stories mentioned in the commit
             stories=[]
             for cr in storyre.finditer(c['message']):
@@ -326,16 +357,20 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
     <div id='info'></div>
     """%(json.dumps(jsexp))
 
-    dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>hours</th><th>links</tr></thead><tbody>\n"
+    dtpat = "<table><thead><tr><th>date<th>commits<th>added<th>removed<th>difflines<th>hours<th>l/h</th><th>links</tr></thead><tbody>\n"
     dtendpat = "</tbody></table>"
-    rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%3.1f</td><td>%s</td></tr>\n"
+    rowpat = "<tr><td><nobr>%s</nobr></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%3.1f</td><td>%3.1f</td><td>%s</td></tr>\n"
     def mkrow(date,dt,commits=True):
         if commits:
             cm = ', '.join(["<a href='https://github.com%s' title='%s by %s on %s'>%s</a>"%(com,commsg,user,stamp,com.split('/')[4][0:4]) for com,commsg,user,stamp in dt['ids']])
 
         else:
             cm=''
-        rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],dt['hours'],cm)
+        if dt['hours']: 
+            lbh=(dt['diff']/dt['hours'])
+        else: 
+            lbh=0
+        rt= rowpat%(date,dt['times'],dt['added'],dt['removed'],dt['diff'],dt['hours'],lbh,cm)
         return rt
     opa=[]
     if fr:opa.append("commits are starting from %s"%(fr))
