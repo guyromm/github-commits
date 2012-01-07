@@ -5,7 +5,8 @@ from commands import getstatusoutput as gso
 from odesk_fetch import run_query,parse_result
 
 
-def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=False,branches=['master'],repos=None):
+def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=False,branches=['master'],repos=None,exclude_users=[],only_users=[]):
+
     #do the odesk dance
     usermap = {}
 
@@ -36,7 +37,8 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
     projbranches={}
     projects_commits={}
 
-    for proj in GITHUB_PROJECTS:
+    lprojs = GITHUB_PROJECTS+repos
+    for proj in lprojs:
         if repos and proj not in repos:
             continue
         if 'all' in branches:
@@ -137,7 +139,7 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
         fproj = projres.group(1)
         fbranch = projres.group(2)
 
-        if fbranch not in projbranches[fproj]:
+        if fproj not in projbranches or fbranch not in projbranches[fproj]:
             #print('not supposed to do branch %s on %s (%s)'%(fbranch,fproj,projbranches[fproj]))
             continue
         obj = json.loads(open(fn,'r').read())
@@ -185,7 +187,7 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
                 story_id = cr.group(1)
                 stories.append(story_id)
             if not len(stories):
-                stories.append('none')
+                stories.append('None')
 
             commsg = c['message']
             if not os.path.exists(comfn):
@@ -288,6 +290,8 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
         for user,dates in res['by_provider_date'].items():
             if user not in user_date: 
                 if not all_odesk_users: continue
+                if user in exclude_users: continue
+                if only_users and user not in only_users: continue
                 user_date[user]={}
             if user not in by_user: by_user[user]=initarr()
             for dt,hrs in dates.items():
@@ -302,6 +306,8 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
                 sid = '#'+sid
                 if usl not in by_user_story: 
                     if not all_odesk_users: continue
+                    if user in exclude_users: continue
+                    if only_users and user not in only_users: continue
                     by_user_story[usl]=initarr()
                 by_user_story[usl]['hours']+=hrs
         
@@ -486,21 +492,28 @@ def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=Fals
         server.quit()
 
 if __name__=='__main__':
-    if len(sys.argv)>1:
-        fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
-        print 'report is for range %s - %s'%(fr,to)
-    else:
-        fr,to = None,None
-    if len(sys.argv)>2 and len(sys.argv[2]):
-        if sys.argv[2][0]=='@': rcptraw = open(sys.argv[2][1:],'r').read()
-        else: rcptraw = rcpt = sys.argv[2]
-        rcpt = rcptraw.split(',')
-    else:
-        rcpt = None
-    branches = sys.argv[3].split(',')
-    if len(sys.argv)>4:
-        repos = sys.argv[4].split(',')
-    else:
-        repos=None
+    args={}
+    for arg in sys.argv[1:]:
+        argp = re.compile('^--(.*)\=(.*)$').search(arg)
+        if not argp: raise Exception('unparsed %s'%arg)
+        args[argp.group(1)]=argp.group(2)
+
+    # if len(sys.argv)>1:
+    #     fr,to = [datetime.datetime.strptime(it,'%Y-%m-%d').date() for it in sys.argv[1].split(':')]
+    #     print 'report is for range %s - %s'%(fr,to)
+    # else:
+    #     fr,to = None,None
+    for fn in ['fr','to','rcpt','repos']:
+        if fn not in args: args[fn]=None
+    if args['fr']: args['fr'] = datetime.datetime.strptime(args['fr'],'%Y-%m-%d').date()
+    if args['to']: args['to'] = datetime.datetime.strptime(args['to'],'%Y-%m-%d').date()
     
-    run(makereport=True,fr=fr,to=to,rcpt=rcpt,branches=branches,repos=repos)
+    if args['rcpt'] and args['rcpt'][0]=='@': args['rcpt'] = open(args['rcpt'][1:],'r').read().split(',')
+    elif args['rcpt']: args['rcpt'] = args['rcpt'].split(',')
+    for fn in ['branches','repos','exclude_users','only_users']:
+        if fn in args:
+            if args[fn]: args[fn] = args[fn].split(',')
+
+    args['all_odesk_users']=bool(args['all_odesk_users'])
+    args['makereport']=True
+    run(**args) #makereport=True,fr=args['fr'],to=args['to'],rcpt=args['rcpt'],branches=args['branches'],repos=args['repos'],all_odesk_users=args['all_odesk_users'])

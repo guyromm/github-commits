@@ -100,7 +100,7 @@ def save_report(rt,fr,to):
     op+='</tbody></table>';
     op+='</body></html>'
 
-    fn = '%s:%s.html'%(fr,to)
+    fn = 'hours-%s:%s.html'%(fr,to)
     fp = open(fn,'w')
     fp.write(op);
     fp.close()
