@@ -5,8 +5,8 @@ from commands import getstatusoutput as gso
 from odesk_fetch import run_query,parse_result
 
 
-def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=False,branches=['master'],repos=None,exclude_users=[],only_users=[]):
-
+def run(fr=None,to=None,rcpt=[],makereport=False,odesk=True,all_odesk_users=False,branches=['master'],repos=[],exclude_users=[],only_users=[]):
+    assert type(repos)==list
     #do the odesk dance
     usermap = {}
 
@@ -503,8 +503,9 @@ if __name__=='__main__':
     #     print 'report is for range %s - %s'%(fr,to)
     # else:
     #     fr,to = None,None
-    for fn in ['fr','to','rcpt','repos']:
+    for fn in ['fr','to','rcpt']:
         if fn not in args: args[fn]=None
+    args['repos']=[]
     if args['fr']: args['fr'] = datetime.datetime.strptime(args['fr'],'%Y-%m-%d').date()
     if args['to']: args['to'] = datetime.datetime.strptime(args['to'],'%Y-%m-%d').date()
     
@@ -514,6 +515,6 @@ if __name__=='__main__':
         if fn in args:
             if args[fn]: args[fn] = args[fn].split(',')
 
-    args['all_odesk_users']=bool(args['all_odesk_users'])
+    args['all_odesk_users']=bool(args.get('all_odesk_users'))
     args['makereport']=True
     run(**args) #makereport=True,fr=args['fr'],to=args['to'],rcpt=args['rcpt'],branches=args['branches'],repos=args['repos'],all_odesk_users=args['all_odesk_users'])

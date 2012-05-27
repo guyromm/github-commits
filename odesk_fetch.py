@@ -33,10 +33,14 @@ def parse_result(data,date_from,date_to,decode_users=True):
     by_provider={}
     by_story={}
     by_provider_story={}
+    by_story_provider={}
     by_provider_date={}
     total=0
 
+    if 'table' not in data:
+        raise Exception(data)
     cols = data['table']['cols']
+    
     rawcols = [col['label'] for col in cols]
 
     for row in data['table']['rows']:
@@ -65,24 +69,43 @@ def parse_result(data,date_from,date_to,decode_users=True):
             by_provider[pid]=0
             by_provider_date[pid]={}
             by_provider_story[pid]={}
+
         if sid not in by_provider_story[pid]:
             by_provider_story[pid][sid]=0
+        if sid not in by_story_provider: by_story_provider[sid]={}
+        if pid not in by_story_provider[sid]: by_story_provider[sid][pid]=0
         if rowdate_s not in by_provider_date[pid]:
             by_provider_date[pid][rowdate_s]=0
-        if sid not in by_story: by_story[sid]=0
+        if sid not in by_story: 
+            by_story[sid]=0
         by_provider[pid]+=hrs
         by_story[sid]+=hrs
         by_provider_date[pid][rowdate_s]+=hrs
         by_provider_story[pid][sid]+=hrs
+        by_story_provider[sid][pid]+=hrs
         total+=hrs
-    return {'by_provider':by_provider,'by_story':by_story,'total':total,'by_provider_date':by_provider_date,'by_provider_story':by_provider_story}
+    return {'by_provider':by_provider,'by_story':by_story,'total':total,'by_provider_date':by_provider_date,'by_provider_story':by_provider_story,'by_story_provider':by_story_provider}
+
+def isort(i1,i2):
+    return cmp(i1[1],i2[1])
 
 def print_report(rt):
+    if 'None' in rt['by_story_provider']:
+        print '------------no story---------------'
+        sbh = rt['by_story_provider']['None'].items()
+        sbh.sort(isort)
+        for k,v in sbh:
+            print '%s\t%s'%(k,v)
+    #raise Exception(rt['by_story_provider']['None'])
     print '------------by provider------------'
-    for k,v in rt['by_provider'].items():
+    bpi = rt['by_provider'].items()
+    bpi.sort(isort)
+    for k,v in bpi:
         print '%s\t%s'%(k,v)
     print '------------by story---------------'
-    for k,v in rt['by_story'].items():
+    bsi = rt['by_story'].items()
+    bsi.sort(isort)
+    for k,v in bsi:
         print '%s\t%s'%(k,v)
     print '------\n%s hours in total'%rt['total']
 def save_report(rt,fr,to):
@@ -98,6 +121,14 @@ def save_report(rt,fr,to):
     for k,v in rt['by_story'].items():
         op+='<tr><td>%s</td><td style="text-align:right">%4.1f</td></tr>'%(k,v)
     op+='</tbody></table>';
+
+    op+='<h2>by provider and story</h2><table><tr><th>provider</th><th>story</th><th>hours</th></tr></thead><tbody>'
+    for u,v in rt['by_provider_story'].items():
+        for s,d in v.items():
+            op+='<tr><td>%s</td><td>%s</td><td style="text-align:right">%4.1f</td></tr>'%(u,s,d)
+
+    op+='</tbody></table>'
+
     op+='</body></html>'
 
     fn = 'hours-%s:%s.html'%(fr,to)
@@ -108,6 +139,9 @@ def save_report(rt,fr,to):
 
 if __name__=='__main__':
     fr,to = sys.argv[1].split(':')
+    if to=='today': to = datetime.datetime.now().strftime('%Y-%m-%d')
+    if fr=='today': fr = datetime.datetime.now().strftime('%Y-%m-%d')
+
     #nw = datetime.datetime.now().date() ; date_from = nw - datetime.timedelta(days=30) ; date_to = nw
     if len(sys.argv)>2 and sys.argv[2]=='test':
         from tdata import data
@@ -116,6 +150,6 @@ if __name__=='__main__':
         rt = run_query(date_from=fr,date_to=to,provider=sys.argv[2])
     else:
         rt = run_query(date_from=fr,date_to = to)
-
+    print_report(rt)
     save_report(rt,fr,to)
     
