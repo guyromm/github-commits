@@ -29,7 +29,7 @@ def parse_result(data,date_from,date_to,decode_users=True):
     if (type(date_to)==datetime.date): date_to = date_to.strftime('%Y-%m-%d')
     date_from_d = datetime.datetime.strptime(date_from,'%Y-%m-%d')
     date_to_d = datetime.datetime.strptime(date_to,'%Y-%m-%d')
-    storyre = re.compile('([0-9]{3})')
+    storyre = re.compile('([0-9\/]{3,})')
     by_provider={}
     by_story={}
     by_provider_story={}
