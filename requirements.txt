@@ -1,1 +1,3 @@
+SQLAlchemy
+mysql-python
 python-odesk

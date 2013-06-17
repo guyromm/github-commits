@@ -1,12 +1,21 @@
 import sys,urllib,re,datetime,json
 import odesk
 conf = json.loads(open('odesk_auth.json','r').read())
-client = odesk.Client(conf['pub_key'],conf['priv_key'],conf['auth_token'])
+client = odesk.Client(conf['pub_key'],
+                      conf['priv_key'],
+                      conf['auth_token'])
+
 def run_query(date_from,date_to,provider=None):
     if provider:
-        fields = ['memo','worked_on','sum(hours)']
+        fields = ['memo',
+                  'worked_on',
+                  'sum(hours)']
     else:
-        fields = ['memo','worked_on','provider_id','provider_name','sum(hours)']
+        fields = ['memo',
+                  'worked_on',
+                  'provider_id',
+                  'provider_name',
+                  'sum(hours)']
 
     odq = odesk.Query(select=fields, 
                       where=(odesk.Q('worked_on') <= date_to) &\
@@ -25,8 +34,10 @@ def run_query(date_from,date_to,provider=None):
 
 def parse_result(data,date_from,date_to,decode_users=True):
     #print 'parsing result %s'%data
-    if (type(date_from)==datetime.date): date_from = date_from.strftime('%Y-%m-%d')
-    if (type(date_to)==datetime.date): date_to = date_to.strftime('%Y-%m-%d')
+    if (type(date_from)==datetime.date): 
+        date_from = date_from.strftime('%Y-%m-%d')
+    if (type(date_to)==datetime.date): 
+        date_to = date_to.strftime('%Y-%m-%d')
     date_from_d = datetime.datetime.strptime(date_from,'%Y-%m-%d')
     date_to_d = datetime.datetime.strptime(date_to,'%Y-%m-%d')
     storyre = re.compile('([0-9\/]{3,})')
@@ -58,7 +69,8 @@ def parse_result(data,date_from,date_to,decode_users=True):
         rowdate = datetime.datetime.strptime(dt['worked_on'],'%Y%m%d')
         rowdate_s = rowdate.strftime('%Y-%m-%d')
         if (rowdate<date_from_d or rowdate>date_to_d):
-            raise Exception('got row from %s (outside of %s - %s)'%(rowdate,date_from_d,date_to_d))
+            raise Exception('got row from %s (outside of %s - %s)'\
+                                %(rowdate,date_from_d,date_to_d))
             continue
         storyres = storyre.search(dt['memo'])
         if storyres:
