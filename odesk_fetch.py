@@ -1,16 +1,31 @@
 import sys,urllib,re,datetime,json
 import odesk
 conf = json.loads(open('odesk_auth.json','r').read())
-client = odesk.Client(conf['pub_key'],conf['priv_key'],conf['auth_token'])
+
+client = odesk.Client(conf['pub_key'],
+                      conf['priv_key'],
+                      conf['auth_token'])
+
+print client.auth.get_authorize_url()
+
+verifier = raw_input('Enter oauth_verifier: ')
+
+oauth_access_token, oauth_access_token_secret = \
+    client.auth.get_access_token(verifier)
+
+client = odesk.Client(conf['pub_key'], conf['priv_key'],
+                      oauth_access_token=oauth_access_token,
+                      oauth_access_token_secret=oauth_access_token_secret)
+
 def run_query(date_from,date_to,provider=None):
     if provider:
         fields = ['memo','worked_on','sum(hours)']
     else:
         fields = ['memo','worked_on','provider_id','provider_name','sum(hours)']
 
-    odq = odesk.Query(select=fields, 
-                      where=(odesk.Q('worked_on') <= date_to) &\
-                          (odesk.Q('worked_on') >= date_from))
+    odq = odesk.utils.Query(select=fields, 
+                      where=(odesk.utils.Q('worked_on') <= date_to) &\
+                          (odesk.utils.Q('worked_on') >= date_from))
     if provider:
         res = client.\
             timereport.\
