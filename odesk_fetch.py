@@ -3,15 +3,19 @@ import odesk
 conf = json.loads(open('odesk_auth.json','r').read())
 
 client = odesk.Client(conf['pub_key'],
-                      conf['priv_key'],
-                      conf['auth_token'])
+                      conf['priv_key']) 
 
-print client.auth.get_authorize_url()
+oauth_access_token,oauth_access_token_secret = conf.get('auth_token'),conf.get('auth_token_secret')
+if not oauth_access_token or not oauth_access_token_secret:
+    print client.auth.get_authorize_url()
 
-verifier = raw_input('Enter oauth_verifier: ')
+    verifier = raw_input('Enter oauth_verifier: ')
 
-oauth_access_token, oauth_access_token_secret = \
-    client.auth.get_access_token(verifier)
+    oauth_access_token, oauth_access_token_secret = \
+        client.auth.get_access_token(verifier)
+
+    print 'logging in with %s / %s'%(oauth_access_token,oauth_access_token_secret)
+    print 'be sure to put these into your odesk_auth.json as auth_token, auth_token_secret'
 
 client = odesk.Client(conf['pub_key'], conf['priv_key'],
                       oauth_access_token=oauth_access_token,
